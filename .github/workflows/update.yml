@@ -1,0 +1,25 @@
+name: Update Global Screener
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - run: pip install yfinance pandas numpy requests html5lib lxml pykrx
+    - run: python generate.py
+      timeout-minutes: 45
+    - run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Screener Bot"
+        git pull origin main --no-edit
+        git add index.html data/
+        git diff --cached --quiet || git commit -m "update: $(date -u +%Y-%m-%d)"
+        git push origin main
