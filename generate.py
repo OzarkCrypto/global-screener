@@ -1,4 +1,3 @@
-"""Global Screener — Multi-market 52-week high scanner with momentum scoring"""
 import pandas as pd, numpy as np, yfinance as yf, json, warnings, os, time, requests
 from datetime import datetime, timedelta
 from io import StringIO
@@ -8,8 +7,6 @@ END = datetime.now().strftime('%Y-%m-%d')
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# ═══ MARKET DEFINITIONS ═══
-# Namu Securities supported exchanges: NYSE, NASDAQ, AMEX, TSE, HKEX, SSE/SZSE (Connect), XETRA, LSE
 MARKETS = {
     'US': {'name': 'United States', 'name_ko': '미국', 'currency': '$', 'suffix': '', 'source': 'yfinance'},
     'KR': {'name': 'South Korea', 'name_ko': '한국', 'currency': '₩', 'suffix': '', 'source': 'krx+naver'},
@@ -19,46 +16,45 @@ MARKETS = {
     'HK': {'name': 'Hong Kong', 'name_ko': '홍콩', 'currency': 'HK$', 'suffix': '.HK', 'source': 'yfinance'},
 }
 
-# ═══ THEME BASKETS (cross-market) ═══
 THEMES = {
     'Nuclear/SMR': {
         'US': ['CEG','VST','CCJ','SMR','OKLO','NNE'],
-        'KR': ['034020','052690'],  # Doosan Enerbility, KEPCO E&C
-        'JP': ['9501.T'],  # TEPCO
-        'UK': ['RR.L'],  # Rolls Royce
+        'KR': ['034020','052690'],
+        'JP': ['9501.T'],
+        'UK': ['RR.L'],
         'DE': [],
-        'HK': ['1816.HK'],  # CGN Power
+        'HK': ['1816.HK'],
     },
     'Defense': {
         'US': ['LMT','RTX','NOC','GD','LHX','HII'],
-        'KR': ['012450','079550','047810'],  # Hanwha Aero, LIG Nex1, KAI
-        'DE': ['RHM.DE'],  # Rheinmetall
-        'UK': ['BA.L'],  # BAE Systems
-        'JP': ['7011.T','7012.T'],  # Mitsubishi HI, Kawasaki HI
+        'KR': ['012450','079550','047810'],
+        'DE': ['RHM.DE'],
+        'UK': ['BA.L'],
+        'JP': ['7011.T','7012.T'],
         'HK': [],
     },
     'AI Infrastructure': {
         'US': ['NVDA','AVGO','ANET','VRT','DELL','SMCI','MRVL'],
-        'KR': ['005930','000660'],  # Samsung, SK Hynix
-        'DE': ['IFX.DE'],  # Infineon
-        'UK': ['ARM.L'],  # ARM Holdings
-        'JP': ['6857.T','8035.T'],  # Advantest, Tokyo Electron
+        'KR': ['005930','000660'],
+        'DE': ['IFX.DE'],
+        'UK': ['ARM.L'],
+        'JP': ['6857.T','8035.T'],
         'HK': [],
     },
     'Robotics/Automation': {
         'US': ['ROK','TER','ABBNY','ISRG'],
-        'KR': ['454910','277810'],  # Doosan Robotics, Rainbow Robotics
-        'DE': ['KU2.DE'],  # Kuka (if traded)
+        'KR': ['454910','277810'],
+        'DE': ['KU2.DE'],
         'UK': [],
-        'JP': ['6954.T','6506.T'],  # Fanuc, Yaskawa
+        'JP': ['6954.T','6506.T'],
         'HK': [],
     },
     'Shipbuilding': {
         'US': [],
-        'KR': ['329180','010140','042660'],  # HD HHI, Samsung Heavy, Hanwha Ocean
+        'KR': ['329180','010140','042660'],
         'DE': [],
         'UK': [],
-        'JP': ['7013.T'],  # IHI
+        'JP': ['7013.T'],
         'HK': [],
     },
     'Tankers/Shipping': {
@@ -66,30 +62,30 @@ THEMES = {
         'KR': [],
         'DE': [],
         'UK': [],
-        'JP': ['9104.T','9101.T'],  # Mitsui OSK, NYK
+        'JP': ['9104.T','9101.T'],
         'HK': [],
     },
     'Gold Miners': {
         'US': ['NEM','GOLD','AEM','WPM','FNV','GFI'],
         'KR': [],
         'DE': [],
-        'UK': ['FRES.L','EDV.L'],  # Fresnillo, Endeavour
+        'UK': ['FRES.L','EDV.L'],
         'JP': [],
-        'HK': ['2899.HK'],  # Zijin Mining
+        'HK': ['2899.HK'],
     },
     'EV/Battery': {
         'US': ['TSLA'],
-        'KR': ['373220','006400','003670','247540'],  # LG Energy, Samsung SDI, POSCO Future M, Ecopro BM
+        'KR': ['373220','006400','003670','247540'],
         'DE': [],
         'UK': [],
         'JP': [],
-        'HK': ['1211.HK','2594.HK'],  # BYD, BYD Electronic
+        'HK': ['1211.HK','2594.HK'],
     },
     'Cybersecurity': {
         'US': ['PANW','CRWD','ZS','FTNT','NET'],
         'KR': [],
         'DE': [],
-        'UK': ['DRX.L'],  # Darktrace
+        'UK': ['DRX.L'],
         'JP': [],
         'HK': [],
     },
@@ -97,27 +93,22 @@ THEMES = {
         'US': ['RL'],
         'KR': [],
         'DE': [],
-        'UK': ['BRBY.L'],  # Burberry
+        'UK': ['BRBY.L'],
         'JP': [],
         'HK': [],
     },
     'Biotech/Pharma': {
         'US': ['LLY','NVO','AMGN','VKTX','HIMS'],
-        'KR': ['207940','068270'],  # Samsung Bio, Celltrion
+        'KR': ['207940','068270'],
         'DE': [],
-        'UK': ['AZN.L','GSK.L'],  # AstraZeneca, GSK
-        'JP': ['4502.T','4519.T'],  # Takeda, Chugai
+        'UK': ['AZN.L','GSK.L'],
+        'JP': ['4502.T','4519.T'],
         'HK': [],
     },
 }
 
-# ═══ TICKER LISTS ═══
-# US: Russell 3000 loaded from CSV
-# KR: full KOSPI+KOSDAQ from KRX API
-# Others: major indices constituents
 
 def load_ticker_list(market):
-    """Load ticker list for a market from CSV, return list of tickers."""
     path = os.path.join(DATA_DIR, f'{market.lower()}_tickers.csv')
     if os.path.exists(path):
         df = pd.read_csv(path)
@@ -129,12 +120,10 @@ def load_ticker_list(market):
     return []
 
 def fetch_major_tickers_yf(market):
-    """Fetch major tickers for a market via yfinance index constituents."""
     suffix = MARKETS[market]['suffix']
     tickers = []
     
     if market == 'DE':
-        # DAX 40 + MDAX major
         dax = ['SAP.DE','SIE.DE','ALV.DE','DTE.DE','AIR.DE','MBG.DE','BMW.DE','BAS.DE','MUV2.DE',
                'IFX.DE','RHM.DE','HEN3.DE','ADS.DE','BEI.DE','DPW.DE','VNA.DE','HEI.DE',
                'SHL.DE','FRE.DE','MTX.DE','RWE.DE','EON.DE','DB1.DE','CON.DE','VOW3.DE',
@@ -142,7 +131,6 @@ def fetch_major_tickers_yf(market):
                'PUM.DE','LHA.DE','TKA.DE','FME.DE','1COV.DE','BNR.DE','QIA.DE']
         tickers = dax
     elif market == 'UK':
-        # FTSE 100 major
         ftse = ['SHEL.L','AZN.L','HSBA.L','ULVR.L','BP.L','GSK.L','RIO.L','REL.L','DGE.L',
                 'AAL.L','LSEG.L','CRH.L','BA.L','GLEN.L','NG.L','RR.L','LLOY.L','BARC.L',
                 'PRU.L','CPG.L','EXPN.L','III.L','ABF.L','ANTO.L','SSE.L','NWG.L','FRES.L',
@@ -151,7 +139,6 @@ def fetch_major_tickers_yf(market):
                 'SGE.L','AUTO.L','SGRO.L','PSN.L','MNDI.L','PSON.L','SMT.L']
         tickers = ftse
     elif market == 'JP':
-        # Nikkei 225 major
         nikkei = ['7203.T','6758.T','6861.T','8306.T','9432.T','6501.T','7267.T',
                   '9984.T','4502.T','6902.T','7751.T','6954.T','8035.T','6857.T',
                   '8316.T','6762.T','4063.T','9433.T','3382.T','2914.T','4568.T',
@@ -161,7 +148,6 @@ def fetch_major_tickers_yf(market):
                   '6723.T','8411.T','8766.T','4543.T','6098.T','3407.T','2502.T','2802.T']
         tickers = nikkei
     elif market == 'HK':
-        # Hang Seng major
         hsi = ['0700.HK','9988.HK','0005.HK','1299.HK','2318.HK','0941.HK','1810.HK',
                '0388.HK','0027.HK','0003.HK','0011.HK','0016.HK','0883.HK','0857.HK',
                '1211.HK','2594.HK','0002.HK','1038.HK','0006.HK','0012.HK','0017.HK',
@@ -172,7 +158,6 @@ def fetch_major_tickers_yf(market):
     
     return tickers
 
-# ═══ KRX API ═══
 KRX_API_KEY = '31C1A64E11714282BD3C0A3D1E17FC00D5965CA1'
 
 def krx_api_fetch(endpoint, params):
@@ -181,7 +166,6 @@ def krx_api_fetch(endpoint, params):
     d = r.json()
     return d.get('OutBlock_1')
 
-# ═══ COMMON STOCK FILTER ═══
 _ETF_PFX = ['KODEX','TIGER','KBSTAR','ARIRANG','SOL ','HANARO','KOSEF','ACE ','TIMEFOLIO','PLUS ',
     'MASTER','BNK','VITA','KoAct','파인더','메리츠','미래에셋TIGER','RISE ','FOCUS','WOORI',
     'TRUE','TREX','KINDEX','QV ','1Q ','히어로','파워 ','마이다스','KIWOOM','WON']
@@ -209,9 +193,7 @@ def is_junk_stock(name, ticker):
     if 'contingent value right' in nl: return True
     return False
 
-# ═══ DATA PIPELINE ═══
 def load_or_create_csv(market):
-    """Load existing daily CSV or return empty DataFrame."""
     path = os.path.join(DATA_DIR, f'{market.lower()}_daily.csv')
     if os.path.exists(path):
         df = pd.read_csv(path, index_col=0, parse_dates=True)
@@ -224,7 +206,6 @@ def save_csv(market, df):
     df.to_csv(path)
 
 def update_kr_data(existing_df):
-    """Update Korean stock data from KRX API."""
     today = pd.Timestamp.now().normalize()
     last_date = existing_df.index.max() if len(existing_df) > 0 else today - pd.Timedelta(days=365*2)
     
@@ -270,7 +251,6 @@ def update_kr_data(existing_df):
     return existing_df
 
 def update_yf_data(market, existing_df, tickers):
-    """Update data for yfinance-based markets."""
     if not tickers: return existing_df
     today = pd.Timestamp.now().normalize()
     last_date = existing_df.index.max() if len(existing_df) > 0 else today - pd.Timedelta(days=365*2)
@@ -312,14 +292,11 @@ def update_yf_data(market, existing_df, tickers):
         return df
     return existing_df
 
-# ═══ 52-WEEK HIGH + MOMENTUM COMPUTATION ═══
 def compute_screener(market, df, name_map=None):
-    """Compute 52-week highs + momentum scores for a market."""
     if df is None or df.empty or len(df) < 50:
         print(f"  {market}: insufficient data")
         return []
     
-    # Ensure enough history
     min_days = min(252, len(df) - 1)
     
     results = []
@@ -331,7 +308,6 @@ def compute_screener(market, df, name_map=None):
             cur = float(s.iloc[-1])
             if cur <= 0: continue
             
-            # 52-week high/low
             lb = min(252, len(s) - 1)
             h52 = float(s.iloc[-lb:].max())
             l52 = float(s.iloc[-lb:].min())
@@ -340,25 +316,21 @@ def compute_screener(market, df, name_map=None):
             pct_from_high = (cur / h52 - 1) * 100
             pct_from_low = (cur / l52 - 1) * 100
             
-            # Only include if within 3% of 52w high
             if pct_from_high < -3.0: continue
             
-            # Momentum: 1M, 3M, 6M, 12M returns
             ret_1m = (cur / float(s.iloc[-min(21, len(s)-1)]) - 1) * 100 if len(s) > 21 else None
             ret_3m = (cur / float(s.iloc[-min(63, len(s)-1)]) - 1) * 100 if len(s) > 63 else None
             ret_6m = (cur / float(s.iloc[-min(126, len(s)-1)]) - 1) * 100 if len(s) > 126 else None
             ret_12m = (cur / float(s.iloc[-min(252, len(s)-1)]) - 1) * 100 if len(s) > 252 else None
             
-            # Momentum score: weighted average of available returns
             scores = []
             if ret_3m is not None: scores.append(ret_3m * 0.3)
             if ret_6m is not None: scores.append(ret_6m * 0.4)
             if ret_12m is not None: scores.append(ret_12m * 0.3)
             mom_score = sum(scores) / max(1, len(scores)) if scores else 0
             
-            # Volume trend (last 20d avg vs 60d avg)
             if len(s) > 60:
-                vol_ratio = None  # will add volume data later
+                vol_ratio = None
             
             name = name_map.get(ticker, ticker) if name_map else ticker
             
@@ -379,14 +351,11 @@ def compute_screener(market, df, name_map=None):
             results.append(entry)
         except: pass
     
-    # Sort by momentum score
     results.sort(key=lambda x: -(x['mom'] or 0))
     print(f"  {market}: {len(results)} stocks near 52-week high")
     return results
 
-# ═══ THEME MATCHING ═══
 def match_themes(all_results):
-    """Match stocks to themes and compute theme-level signals."""
     theme_data = {}
     
     for theme_name, theme_tickers in THEMES.items():
@@ -394,10 +363,8 @@ def match_themes(all_results):
         for market, tickers in theme_tickers.items():
             if not tickers: continue
             market_results = all_results.get(market, [])
-            # Find any stocks from this theme in the highs list
             highs_tickers = {r['t'] for r in market_results}
             for t in tickers:
-                # Strip suffix for matching
                 t_clean = t.replace('.T','').replace('.HK','').replace('.DE','').replace('.L','')
                 matched = t in highs_tickers or t_clean in highs_tickers
                 if matched:
@@ -419,22 +386,17 @@ def match_themes(all_results):
                 'markets': {m: stocks for m, stocks in theme_stocks.items()},
             }
     
-    # Sort by cross-market breadth then match percentage
     return dict(sorted(theme_data.items(), key=lambda x: (-x[1]['n_markets'], -x[1]['pct'])))
 
-# ═══ KR NAME MAP ═══
 def build_kr_name_map():
-    """Build Korean stock name map from KRX API or CSV."""
     path = os.path.join(DATA_DIR, 'kr_names.csv')
     name_map = {}
     
-    # Load existing
     if os.path.exists(path):
         df = pd.read_csv(path)
         for _, r in df.iterrows():
             name_map[str(r['code']).zfill(6)] = str(r['name'])
     
-    # Try to update from KRX API
     try:
         data = krx_api_fetch('sto/stk_bydd_trd', {'basDd': datetime.now().strftime('%Y%m%d')})
         if not data:
@@ -448,7 +410,6 @@ def build_kr_name_map():
                 code = str(r.get('ISU_SRT_CD', '')).strip()
                 name = str(r.get('ISU_ABBRV', '')).strip()
                 if code and name and len(code) == 6: name_map[code] = name
-            # Also fetch KOSDAQ
             for delta in range(0, 10):
                 dt = (datetime.now() - timedelta(days=delta)).strftime('%Y%m%d')
                 data2 = krx_api_fetch('sto/ksq_bydd_trd', {'basDd': dt})
@@ -459,7 +420,6 @@ def build_kr_name_map():
                         if code and name and len(code) == 6: name_map[code] = name
                     break
                 time.sleep(0.3)
-            # Save
             pd.DataFrame([{'code': k, 'name': v} for k, v in name_map.items()]).to_csv(path, index=False)
             print(f"  KR names: {len(name_map)} stocks")
     except Exception as e:
@@ -467,9 +427,7 @@ def build_kr_name_map():
     
     return name_map
 
-# ═══ US NAME MAP ═══
 def build_us_name_map():
-    """Build US stock name + sector map."""
     path = os.path.join(DATA_DIR, 'us_ticker_list.csv')
     name_map = {}; sector_map = {}
     if os.path.exists(path):
@@ -484,14 +442,11 @@ def build_us_name_map():
                 sector_map[t] = str(r.get(sc_col, ''))
     return name_map, sector_map
 
-# ═══ MAIN PIPELINE ═══
 print(f"Global Screener: {END}")
 
-# 1. Load/update data per market
 all_data = {}
 all_results = {}
 
-# Korea
 print("\n=== KOREA ===")
 kr_df = load_or_create_csv('KR')
 kr_df = update_kr_data(kr_df)
@@ -500,19 +455,16 @@ if len(kr_df) > 0:
     kr_names = build_kr_name_map()
     all_results['KR'] = compute_screener('KR', kr_df, kr_names)
 
-# US
 print("\n=== US ===")
 us_df = load_or_create_csv('US')
 us_tickers = load_ticker_list('US')
 if not us_tickers:
-    # Use broad universe from existing regime-monitor data
     us_tickers_path = os.path.join(DATA_DIR, 'us_ticker_list.csv')
     if os.path.exists(us_tickers_path):
         tl = pd.read_csv(us_tickers_path)
         tk_col = 'symbol' if 'symbol' in tl.columns else 'Ticker'
         us_tickers = tl[tk_col].dropna().tolist()
     else:
-        # Fallback: use S&P 500 + Russell components from yfinance
         print("  No US ticker list found, using yfinance S&P 500")
         try:
             sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
@@ -525,21 +477,17 @@ if len(us_df) > 0:
     save_csv('US', us_df)
     us_names, us_sectors = build_us_name_map()
     us_results = compute_screener('US', us_df, us_names)
-    # Add sector info
     for r in us_results:
         r['sector'] = us_sectors.get(r['t'], '')
-    # Filter junk
     us_results = [r for r in us_results if not is_junk_stock(r['n'], r['t'])]
     all_results['US'] = us_results
 
-# Europe + Asia
 for market in ['DE', 'UK', 'JP', 'HK']:
     print(f"\n=== {MARKETS[market]['name'].upper()} ===")
     df = load_or_create_csv(market)
     tickers = load_ticker_list(market)
     if not tickers:
         tickers = fetch_major_tickers_yf(market)
-        # Save ticker list
         if tickers:
             pd.DataFrame({'ticker': tickers}).to_csv(os.path.join(DATA_DIR, f'{market.lower()}_tickers.csv'), index=False)
     df = update_yf_data(market, df, tickers)
@@ -547,14 +495,12 @@ for market in ['DE', 'UK', 'JP', 'HK']:
         save_csv(market, df)
         all_results[market] = compute_screener(market, df)
 
-# Theme matching
 print("\n=== THEMES ===")
 theme_results = match_themes(all_results)
 for name, data in theme_results.items():
     markets = ', '.join(data['markets'].keys())
     print(f"  {name}: {data['matched']}/{data['total']} ({data['pct']}%) across {data['n_markets']} markets [{markets}]")
 
-# ═══ BUILD OUTPUT ═══
 output = {
     'date': END,
     'generated': datetime.now().strftime('%Y-%m-%d %H:%M UTC'),
@@ -584,7 +530,6 @@ for name, data in theme_results.items():
 data_str = json.dumps(output, separators=(',',':'), ensure_ascii=False)
 print(f"\nOutput JSON: {len(data_str)/1024:.0f} KB")
 
-# ═══ HTML ═══
 FAVICON = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAVlpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IlhNUCBDb3JlIDUuNC4wIj4KICAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgICAgPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIKICAgICAgICAgICAgeG1sbnM6dGlmZj0iaHR0cDovL25zLmFkb2JlLmNvbS90aWZmLzEuMC8iPgogICAgICAgICA8dGlmZjpPcmllbnRhdGlvbj4xPC90aWZmOk9yaWVudGF0aW9uPgogICAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KTMInWQAAA0pJREFUWAnFl0toE1EUhv8kk0naJi0tpFIEBUHc+AAXguBGxIWIG3GjuHPhwoULEQQRF6ILFy5EQdCVuhPBBxT3KoqKIj4QxBdaxaKitrVNm+bh//9OJp1MMpMqeOBm7p25539/7jl3bkwL/me4VIWl9Fx1dIR7B1NbLPsDLssFfYmYyH4qZ7LxGaH9D6eiQNrqD/p9fafnj2YmhLxeTwJ/5JOb7kYulJi5XGY26RnX9IxSxhkLZsPjkT5+bYuJRfJPHj+mNb3kX9K0L3k8kx8PU6KJqvxqkW6A0WUxibuS48F+N5YvCuIJcqhsS9InU3Fg5JNI7dCJ+kzaXlHSC5kDg=='
 
 html = f"""<!DOCTYPE html>
